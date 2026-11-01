@@ -137,6 +137,18 @@ jobs:
       - name: The documented counts match the run, and the workflow names the real repository
         run: node tools/check-doc-counts.mjs --logs "$RUNNER_TEMP/dsh-qq-doc-counts"
 
+      - name: Security regression checks (offline)
+        run: |
+          node scripts/verify-authorization.mjs
+          node scripts/verify-security-config.mjs
+
+      - name: DSH 0.2.1-rc.5 credential service contract
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm install --prefix "$RUNNER_TEMP/dsh-compat" --ignore-scripts --no-audit --no-fund @deepseek-ai/dsh-credentials-local@0.2.1-rc.5
+          DSH_COMPAT_NODE_MODULES="$RUNNER_TEMP/dsh-compat/node_modules" node scripts/verify-host-contract.mjs
+
       - name: No name is used without being imported
         run: node tools/check-unbound.mjs .
 

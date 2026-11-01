@@ -1,0 +1,93 @@
+name: Codex Security PR
+
+on:
+  pull_request:
+    branches: [main]
+    types: [opened, synchronize, reopened, ready_for_review]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: codex-security-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  security:
+    name: Codex Security scan
+    if: >-
+      github.event_name != 'pull_request' ||
+      (github.event.pull_request.head.repo.full_name == github.repository &&
+       github.actor != 'dependabot[bot]')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    outputs:
+      scan-status: ${{ steps.scan.outputs.scan-status }}
+      policy-status: ${{ steps.scan.outputs.policy-status }}
+      scanned-sha: ${{ steps.scan.outputs.scanned-sha }}
+    steps:
+      - name: Require scan credentials and an explicit budget
+        env:
+          OPENAI_API_KEY: ${{ secrets.CODEX_SECURITY_API_KEY }}
+          SCAN_MAX_COST: ${{ vars.CODEX_SECURITY_MAX_COST }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -z "$OPENAI_API_KEY" ]; then
+            echo '::error::Configure the CODEX_SECURITY_API_KEY repository secret.'
+            exit 1
+          fi
+          node -e 'const n = Number(process.env.SCAN_MAX_COST); if (!Number.isFinite(n) || n <= 0) { console.error("Configure a positive CODEX_SECURITY_MAX_COST repository variable."); process.exit(1); }'
+
+      - name: Prepare the Ubuntu sandbox
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install --yes bubblewrap apparmor-profiles
+          sudo apparmor_parser -r /usr/share/apparmor/extra-profiles/bwrap-userns-restrict
+
+      - name: Check out the exact revision
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Review the repository at this revision
+        id: scan
+        uses: openai/codex-security@3f61e5150981a5087c32e4395bbaa8ce5ce0c3e3 # action-v0.3.0
+        with:
+          scope: repository
+          model: gpt-5.6-sol
+          effort: xhigh
+          fail-on-severity: medium
+          max-cost: ${{ vars.CODEX_SECURITY_MAX_COST }}
+          upload-artifacts: 'true'
+          retention-days: '7'
+          artifact-name: codex-security-${{ github.run_id }}-${{ github.run_attempt }}
+        env:
+          OPENAI_API_KEY: ${{ secrets.CODEX_SECURITY_API_KEY }}
+
+  security-gate:
+    name: Codex Security gate
+    needs: security
+    if: ${{ always() }}
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Require a completed passing scan of this revision
+        env:
+          SCAN_JOB_RESULT: ${{ needs.security.result }}
+          SCAN_STATUS: ${{ needs.security.outputs.scan-status }}
+          POLICY_STATUS: ${{ needs.security.outputs.policy-status }}
+          SCANNED_SHA: ${{ needs.security.outputs.scanned-sha }}
+          EXPECTED_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$SCAN_JOB_RESULT" = success
+          test "$SCAN_STATUS" = completed
+          test "$POLICY_STATUS" = passed
+          test -n "$SCANNED_SHA"
+          test "$SCANNED_SHA" = "$EXPECTED_SHA"

@@ -30,12 +30,14 @@
     "./package.json": "./package.json"
   },
   "files": [
-    "lib",
+    "lib/**/*.js",
     "index.js",
     "client.js",
     "cordis.patch.yml",
-    "docs",
-    "tools",
+    "docs/**/*.md",
+    "docs/images/**/*.png",
+    "docs/images/**/*.jpg",
+    "tools/**/*.mjs",
     "README.md",
     "README.zh.md",
     "LICENSE"
@@ -54,5 +56,8 @@
       "platform": "web",
       "immediately": true
     }
+  },
+  "devDependencies": {
+    "yaml": "2.9.0"
   }
 }

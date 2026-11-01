@@ -20,9 +20,10 @@
  *
  * 然后按屏幕提示在 QQ 里操作。日志同时写到 `smoke/step3-probe.log`。
  */
-import { appendFileSync, existsSync, readFileSync, writeFileSync } from 'node:fs'
+import { appendFileSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { loadProbeCredentials } from './credentials.mjs'
 import { QQBot } from '@tencent-connect/qqbot-nodejs'
 
 const here = dirname(fileURLToPath(import.meta.url))
@@ -35,37 +36,10 @@ function log(line) {
   appendFileSync(LOG, `${stamped}\n`, 'utf8')
 }
 
-/**
- * 从第一步的烟测凭据里取 appId / appSecret。
- *
- * **按候选列表找，而不是写死一个路径**：第一步的凭据落在 `qq-plugin/smoke/`，
- * 而本探针在 `dsh-qq/smoke/`。写死任何一个都会在另一处运行时以
- * `ENOENT ... credentials.json` 收场——那是个与探针目的完全无关的失败，
- * 却要花时间去查。所以两个位置都找，并把"找过哪里"写进错误里。
- *
- * 仍然**不复制凭据文件**：凭据只该有一份，副本会带来"哪份才是最新的"这种问题。
- */
-function loadCredentials() {
-  const candidates = [
-    join(here, 'credentials.json'), // dsh-qq/smoke/
-    join(here, '..', '..', 'smoke', 'credentials.json'), // qq-plugin/smoke/（第一步的烟测目录）
-  ]
-  const found = candidates.find((path) => existsSync(path))
-  if (found === undefined) {
-    throw new Error(
-      `找不到凭据文件。找过这些位置：\n${candidates.map((p) => `  ${p}`).join('\n')}\n` +
-        '请先在第一步的烟测里完成扫码绑定（smoke/bind.mjs），或手工放一份 credentials.json。',
-    )
-  }
-  log(`凭据读自 ${found}`)
-  const parsed = JSON.parse(readFileSync(found, 'utf8'))
-  if (typeof parsed.appId !== 'string' || typeof parsed.appSecret !== 'string') {
-    throw new Error(`${found} 里缺 appId 或 appSecret`)
-  }
-  return parsed
-}
 
-const { appId, appSecret, userOpenid } = loadCredentials()
+
+
+const { appId, appSecret, userOpenid } = loadProbeCredentials()
 writeFileSync(LOG, '', 'utf8')
 log(`探针启动 appId=${appId} openid=${userOpenid ?? '(未记录)'}`)
 

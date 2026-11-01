@@ -634,3 +634,14 @@ pass/fail.
 ## Licence
 
 MIT — see [LICENSE](LICENSE).
+
+## Owner authorization and security verification
+
+The security remediation targets an installation of **DeepSeek Harness 0.2.1-rc.5**. The original development baseline above is historical; see [the verification record](docs/SECURITY-REMEDIATION.md) for what was actually tested.
+Only the exact bound owner's `userOpenid` can submit private messages, commands, interaction replies or attachments. Matching is case-sensitive; a QQ number is not an OpenID. Credentials without an owner cannot connect. Rebind using the QR page to repair older incomplete records. Saving a new account or owner revokes the old connection and its pending interactions.
+
+The existing manual endpoint `POST /.dsh-qq-plugin/credentials` requires three strings: `appId`, `appSecret`, and `userOpenid` (the intended user's OpenID for that bot). Obtain the identity through a trusted binding flow; never copy the first inbound sender automatically. The settings page supports QR binding and shows an alert for legacy records missing the owner. Secrets stay in the host credential service, not plugin state.
+
+Live smoke probes accept `QQ_SMOKE_APP_ID`, `QQ_SMOKE_APP_SECRET`, `QQ_SMOKE_USER_OPENID`, or an explicit `QQ_SMOKE_CREDENTIALS_FILE` outside **all Git working trees**. The JSON file uses the same three fields. Use an OS secret manager to inject environment variables, or a user-private file (0600 on POSIX / restricted ACL on Windows). Partial environment credentials fail rather than falling back to a file. Repository paths and symlinks into the repository are rejected; do not create `smoke/credentials.json`. Never paste secrets into command history, logs or issues. These probes contact Tencent and must only be run deliberately; the offline tests do not contact QQ.
+
+Additional offline gates: `node scripts/verify-authorization.mjs` and `node scripts/verify-security-config.mjs`. CI also installs the exact DSH credential service into a temporary directory and runs `scripts/verify-host-contract.mjs`. The three historical suite counts remain separately checked.

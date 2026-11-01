@@ -1478,7 +1478,7 @@ check('未知帧被记录形态', typeof wrap({ weird: 1 }).frameShape, 'string'
         credentials: {
           available: true,
           save: async () => ({}),
-          load: async (appId) => ({ appId, appSecret: 'secret' }),
+          load: async (appId) => ({ appId, appSecret: 'secret', userOpenid: 'peer' }),
           remove: async () => {},
           describe: async () => ({ configured: true }),
         },
@@ -1585,7 +1585,7 @@ check('未知帧被记录形态', typeof wrap({ weird: 1 }).frameShape, 'string'
         const credentials9 = {
           available: true,
           save: async () => ({}),
-          load: async (appId) => ({ appId, appSecret: 'secret' }),
+          load: async (appId) => ({ appId, appSecret: 'secret', userOpenid: 'peer' }),
           remove: async () => {},
           describe: async () => ({ configured: true }),
         }
@@ -2706,6 +2706,7 @@ check('未知帧被记录形态', typeof wrap({ weird: 1 }).frameShape, 'string'
 
     // ---- 工具侧：agent 用自然语言走的是同一个路由（一份实现、两个入口）----
     await modelRuntime.store.update((next) => {
+      next.accounts['111'] = { appId: '111', userOpenid: 'peer', enabled: true }
       next.bindings['111:peer'] = {
         conversationId: '111:peer',
         accountId: '111',
@@ -2901,7 +2902,7 @@ check('未知帧被记录形态', typeof wrap({ weird: 1 }).frameShape, 'string'
       stateFileForNotify,
       JSON.stringify({
         version: 1,
-        accounts: { '111': { appId: '111', enabled: true } },
+        accounts: { '111': { appId: '111', userOpenid: 'E56C', enabled: true } },
         bindings: { '111:E56C': { conversationId: '111:E56C', accountId: '111', peerId: 'E56C', sessionId: 'session-bound', title: 'qq' } },
         settings: { allowCrossSessionNotify: false },
         autoStart: true,

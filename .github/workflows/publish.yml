@@ -1,103 +1,42 @@
-# Publish to npm when a version tag is pushed.
-#
-#   git tag v1.0.0 && git push origin v1.0.0
-#
-# ## Why a tag, and not a merge
-#
-# Publishing is the one action in this repository that cannot be taken back. An npm version can be
-# deprecated, but the number itself is never reusable — publish a broken 1.0.1 and 1.0.1 is spent
-# forever. So the trigger is a deliberate act that names the version, and the job re-runs the whole
-# CI gate before anything leaves the machine. A merge says "this is good enough to be on main"; a
-# tag says "this is what 1.0.1 is".
-#
-# ## Authentication: OIDC, not a token
-#
-# There is no `NPM_TOKEN` secret and no long-lived credential anywhere in this repository. The job
-# authenticates to npm with the OIDC identity GitHub issues it, which npm verifies against a trusted
-# publisher configured on the package. `npm publish` picks this up by itself once `id-token: write`
-# is granted below.
-#
-# That is not a stylistic preference. npm revoked all classic tokens in December 2025, and the
-# granular tokens that replaced them carry a 2FA-bypass capability npm is in the middle of
-# restricting — direct publishing is announced as ending in January 2027. A trusted publisher is what
-# npm recommends instead, and it is strictly better: there is no secret to leak, rotate, or expire.
-# If you find an older document telling you to configure `NPM_TOKEN`, it is out of date.
-#
-# ## One-time setup
-#
-# On npmjs.com, for this package: Settings → Trusted Publisher → GitHub Actions. The four fields are
-# matched literally; a typo in any of them shows up as a 403 at publish time and as nothing else.
-#
+# Publish only the exact tested artifact from an authorized protected version tag.
+# Package identity remains upstream; this fork is NOT an authorized npm publisher.
+# One-time npm Trusted Publisher setup (upstream package administrator only):
 #   Organization or user : xcisxc29
 #   Repository           : dsh-qq-plugin
 #   Workflow filename    : publish.yml
-#   Environment          : (leave empty — this workflow declares none)
-#
-# The workflow filename is the file's name, not its path: `publish.yml`, not
-# `.github/workflows/publish.yml`. That is the single most common way to get this wrong.
-#
-# A typo in this block no longer waits for the 403 to show itself: `tools/check-doc-counts.mjs` —
-# which the gate below runs — reads the block back and compares the organization and the repository
-# against `package.json`, the workflow filename against this file's own name, the environment against
-# this workflow declaring none, and the `Actions → …` line below against the `name:` this workflow
-# actually carries. A mismatch turns into a red step naming the line that disagrees, and this block is
-# the only copy of those four fields that is compared — so do not retype them anywhere else either.
-#
-# ## Prerequisites
-#
-#   - The GitHub repository must be public: `--provenance` needs a public repository to produce a
-#     signed attestation.
-#   - `permissions.id-token: write` must stay in this file. Remove it and the publish fails, because
-#     there is no other credential to fall back on.
-#
-# ## Dry run first
-#
-# Actions → Publish → Run workflow. `dry-run` defaults to true, so every check runs and nothing is
-# published. Do that before pushing a tag for real.
+#   Environment          : npm-release
+# Protect npm-release with reviewers and restricted version tags; bind npm to it.
+# Protect v* tags against unauthorized creation, updates and deletion. Then explicitly
+# set NPM_PUBLISH_ENABLED=true in the authorized upstream repository.
+# Actions → Publish → Run workflow performs validation/packing only, for every ref.
 
 name: Publish
-
 on:
   push:
     tags: ['v*']
   workflow_dispatch:
-    inputs:
-      dry-run:
-        description: 'Pack and check without publishing'
-        type: boolean
-        default: true
 
 permissions:
   contents: read
-  # Both halves of the handshake: npm reads this token to confirm that the workflow asking to
-  # publish really is the one the package trusts.
-  id-token: write
 
 jobs:
-  publish:
+  validate:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      digest: ${{ steps.pack.outputs.digest }}
+      version: ${{ steps.pack.outputs.version }}
     steps:
-      - uses: actions/checkout@v4
-
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: '24'
           cache: npm
-          registry-url: 'https://registry.npmjs.org'
-
-      - run: npm ci
-
-      # The same gate as CI, repeated here on purpose. Since a burned version number never comes
-      # back, the release path cannot rely on the CI run that happened to be green on some earlier
-      # commit; it verifies the exact tree the tag points at. `tools/check-cross-plugin.mjs` and
-      # `smoke/` are absent for the same reason they are absent from CI — see .github/workflows/ci.yml.
-      #
-      # "The same gate" is meant literally: the steps below are CI's steps, in CI's order and in
-      # CI's shape, so the two files can be read side by side. The three test steps each tee their
-      # output to `$RUNNER_TEMP/dsh-qq-doc-counts/` precisely because the documented-counts step
-      # reads those logs instead of re-running the suites — without the tee it fails on a missing
-      # log, not on a wrong number. A release gate weaker than CI's would be backwards: publishing
-      # is the only action in this repository that cannot be undone.
+      - run: npm ci --ignore-scripts
       - name: Syntax-check every source file
         shell: bash
         run: |
@@ -146,51 +85,122 @@ jobs:
       - name: The documented counts match the run, and the workflow names the real repository
         run: node tools/check-doc-counts.mjs --logs "$RUNNER_TEMP/dsh-qq-doc-counts"
 
+      - name: Security regression checks (offline)
+        run: |
+          node scripts/verify-authorization.mjs
+          node scripts/verify-security-config.mjs
+
+      - name: DSH 0.2.1-rc.5 credential service contract
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm install --prefix "$RUNNER_TEMP/dsh-compat" --ignore-scripts --no-audit --no-fund @deepseek-ai/dsh-credentials-local@0.2.1-rc.5
+          DSH_COMPAT_NODE_MODULES="$RUNNER_TEMP/dsh-compat/node_modules" node scripts/verify-host-contract.mjs
+
       - name: No name is used without being imported
         run: node tools/check-unbound.mjs .
 
       - name: No import is left unused
         run: node tools/check-unused-imports.mjs .
 
-      # A tag push is the only event where there is a tag to compare against, so the check is
-      # skipped on a `workflow_dispatch` dry run started from a branch — `GITHUB_REF_NAME` there is
-      # the branch name, and comparing "main" to a version number would fail every dry run.
-      - name: Check the tag matches the manifest
+      - name: The tarball carries what users need
+        shell: bash
+        run: |
+          set -euo pipefail
+          manifest=$(npm pack --dry-run 2>&1)
+          missing=0
+          for required in \
+            lib/runtime.js lib/router.js index.js client.js cordis.patch.yml \
+            README.md README.zh.md LICENSE \
+            docs/HANDBOOK-USER.md docs/POSTMORTEM.md docs/RELEASING.md \
+            docs/SETTINGS-CONTRACT.md docs/STEP3-能力调研与实现规格.md \
+            tools/check-cross-plugin.mjs tools/check-doc-counts.mjs \
+            tools/check-unbound.mjs tools/check-unused-imports.mjs
+          do
+            if ! grep -qF "$required" <<<"$manifest"; then
+              echo "missing from the tarball: $required"
+              missing=1
+            fi
+          done
+          if [ "$missing" -ne 0 ]; then
+            echo "--- npm pack --dry-run said ---"
+            echo "$manifest"
+            exit 1
+          fi
+          echo "tarball carries the entry points, the docs and the checkers"
+
+      - name: Check version tag before packing
         if: github.ref_type == 'tag'
         shell: bash
         run: |
-          set -eu
-          manifest=$(node -p "require('./package.json').version")
-          tag="${GITHUB_REF_NAME#v}"
-          if [ "$manifest" != "$tag" ]; then
-            echo "tag $GITHUB_REF_NAME does not match package version $manifest"
-            echo "bump package.json, commit, then tag again"
-            exit 1
-          fi
-          echo "tag and manifest agree on $manifest"
+          set -euo pipefail
+          version=$(node -p "require('./package.json').version")
+          test "$GITHUB_REF_NAME" = "v$version"
 
-      - name: Pack
+      - name: Pack exactly one verified artifact
+        id: pack
         shell: bash
         run: |
-          set -eu
-          # This tarball is the artifact the next step publishes. Packing here rather than letting
-          # `npm publish` pack for itself is what makes "verified" mean anything: the file that gets
-          # uploaded is the file whose contents were just listed and checked.
-          npm pack
-          ls -l dsh-qq-plugin-*.tgz
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/qq-release"
+          npm pack --ignore-scripts --json --pack-destination "$RUNNER_TEMP/qq-release" > "$RUNNER_TEMP/qq-pack.json"
+          node --input-type=module <<'JS'
+          import { readFileSync, renameSync, appendFileSync } from 'node:fs'
+          import { createHash } from 'node:crypto'
+          import { join, basename } from 'node:path'
+          const packs = JSON.parse(readFileSync(join(process.env.RUNNER_TEMP, 'qq-pack.json'), 'utf8'))
+          if (packs.length !== 1 || basename(packs[0].filename) !== packs[0].filename) throw new Error('Expected one package')
+          const source = join(process.env.RUNNER_TEMP, 'qq-release', packs[0].filename)
+          const digest = createHash('sha256').update(readFileSync(source)).digest('hex')
+          renameSync(source, join(process.env.RUNNER_TEMP, 'qq-release', 'release.tgz'))
+          const version = JSON.parse(readFileSync('package.json', 'utf8')).version
+          if (!/^[0-9]+\.[0-9]+\.[0-9]+(?:-[0-9A-Za-z.-]+)?$/.test(version)) throw new Error('Invalid version')
+          appendFileSync(process.env.GITHUB_OUTPUT, `digest=${digest}\nversion=${version}\n`)
+          JS
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: npm-candidate-${{ github.sha }}
+          path: ${{ runner.temp }}/qq-release/release.tgz
+          if-no-files-found: error
+          retention-days: 7
 
-      - name: Publish
+  publish:
+    needs: validate
+    if: >-
+      github.event_name == 'push' && github.ref_type == 'tag' &&
+      startsWith(github.ref, 'refs/tags/v') && github.ref_protected &&
+      github.repository == 'xcisxc29/dsh-qq-plugin' && vars.NPM_PUBLISH_ENABLED == 'true'
+    environment: npm-release
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      # No checkout, dependency install, or repository script runs in this job.
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '24'
+          registry-url: 'https://registry.npmjs.org'
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: npm-candidate-${{ github.sha }}
+          path: ${{ runner.temp }}/qq-release
+      - name: Verify artifact and publish without lifecycle scripts
+        env:
+          EXPECTED_DIGEST: ${{ needs.validate.outputs.digest }}
+          EXPECTED_VERSION: ${{ needs.validate.outputs.version }}
+        working-directory: ${{ runner.temp }}/qq-release
         shell: bash
         run: |
-          set -eu
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ "${{ inputs.dry-run }}" = "true" ]; then
-            echo "dry run: everything above passed, skipping the publish"
-            exit 0
-          fi
-          # Publish the tarball the previous step produced, never a second pack: re-packing could
-          # pick up a different tree and would silently invalidate everything checked above.
-          tarball=$(ls dsh-qq-plugin-*.tgz | sort | tail -n1)
-          echo "publishing $tarball with OIDC"
-          # No NODE_AUTH_TOKEN: with `id-token: write` npm exchanges the workflow's OIDC token for a
-          # short-lived publish credential on its own. There is no secret to set.
-          npm publish "$tarball" --provenance --access public
+          set -euo pipefail
+          [[ "$EXPECTED_DIGEST" =~ ^[0-9a-f]{64}$ ]]
+          test "$GITHUB_REF_NAME" = "v$EXPECTED_VERSION"
+          printf '%s  release.tgz\n' "$EXPECTED_DIGEST" | sha256sum --check --strict
+          tar -xOf release.tgz package/package.json | node -e '
+            let input = "";
+            process.stdin.on("data", chunk => input += chunk);
+            process.stdin.on("end", () => {
+              const p = JSON.parse(input);
+              if (p.name !== "dsh-qq-plugin" || p.version !== process.env.EXPECTED_VERSION) process.exit(1);
+            });'
+          npm publish ./release.tgz --ignore-scripts --provenance --access public
