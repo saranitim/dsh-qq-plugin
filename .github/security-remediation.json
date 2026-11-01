@@ -1,0 +1,18 @@
+{
+  "repository": "saranitim/dsh-qq-plugin",
+  "branch": "work/security-remediation-20261101",
+  "base_sha": "29cc25d1df556d7ae223c3f09a325140db6bd638",
+  "target_host": "DeepSeek Harness 0.2.1-rc.5",
+  "original_scan": "wfr_6ed8b48cecc25bf00ad764e159b26c104c955ace85a896fe45427ed2e70d4d42",
+  "original_findings": ["csf_fe54f11f4d1652d8a3e3df19", "csf_7e495e73ecebef7c0c5d92e5", "csf_1ded710aaf194b19a7114a5b"],
+  "remediation_round": 1,
+  "max_remediation_rounds": 5,
+  "processed_review_ids": [],
+  "review_status": "awaiting_current_head_scan",
+  "automation_status": "paused_until_scan_access_and_budget_are_ready",
+  "required_severity": "medium",
+  "scan_model": "gpt-5.6-sol",
+  "scan_effort": "xhigh",
+  "merge_authorized": false,
+  "publish_authorized": false
+}

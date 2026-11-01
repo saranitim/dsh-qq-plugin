@@ -181,7 +181,7 @@ async function newRuntime({ peerId, connected = true } = {}) {
     join(dir, 'state.json'),
     JSON.stringify({
       version: 1,
-      accounts: { [APP_ID]: { appId: APP_ID, enabled: true } },
+      accounts: { [APP_ID]: { appId: APP_ID, enabled: true, userOpenid: peerId ?? 'UNBOUND_OWNER' } },
       bindings,
       autoStart: true,
     }),
@@ -192,7 +192,7 @@ async function newRuntime({ peerId, connected = true } = {}) {
     home: dir,
     stateFile: join(dir, 'state.json'),
     workspace: join(dir, 'dsh_qq'),
-    credentials,
+    credentials: { ...credentials, load: async () => ({ appId: APP_ID, appSecret: 'fake-secret', userOpenid: peerId ?? 'UNBOUND_OWNER' }) },
   })
   if (!connected) return { runtime, dir, bot: undefined, conversationId: conversationKey(APP_ID, peerId ?? '') }
 

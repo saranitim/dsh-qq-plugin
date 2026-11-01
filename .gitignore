@@ -4,6 +4,10 @@ node_modules/
 # Local verification artifacts
 .verify/
 .smoke/
+/smoke/credentials.json
+credentials.json
+.env
+.env.*
 
 # Packed tarballs
 *.tgz

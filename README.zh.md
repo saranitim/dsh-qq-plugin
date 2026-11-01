@@ -557,3 +557,14 @@ CI 的 runner 上两样都没有。它查的是所有插件共用的两样东西
 ## 许可
 
 MIT —— 见 [LICENSE](LICENSE)。
+
+## 所有者授权与安全验证
+
+本次修复的目标运行环境为 **DeepSeek Harness 0.2.1-rc.5 已安装环境**。前文开发基线为历史说明，实际验证范围见[安全修复记录](docs/SECURITY-REMEDIATION.md)。
+入站私聊只接受当前账号绑定用户的精确 `userOpenid`，区分大小写；QQ 号不能代替 OpenID。校验先于去重、下载、交互回复、会话路由和提示词提交。旧凭据缺少 owner 时禁止连接，请从设置页重新扫码绑定。保存新账号或新 owner 会撤销旧连接及其待回答交互。
+
+已有手动接口 `POST /.dsh-qq-plugin/credentials` 必须提供 `appId`、`appSecret`、`userOpenid` 三个字符串。OpenID 必须来自此机器人的可信绑定信息，不能自动认领第一个来信者。设置页以扫码为主；缺少 owner 的旧账号会显示补绑提示。AppSecret 仍通过宿主凭据服务保存，不进入插件状态文件。
+
+真实 smoke 探针只接受 `QQ_SMOKE_APP_ID`、`QQ_SMOKE_APP_SECRET`、`QQ_SMOKE_USER_OPENID` 三个环境变量，或显式设置 `QQ_SMOKE_CREDENTIALS_FILE` 指向所有 Git 工作区之外的凭据文件。JSON 字段为同名的 `appId`、`appSecret`、`userOpenid`。环境变量建议由系统密钥管理器注入；文件须限制权限（POSIX 0600 / Windows 仅当前用户 ACL）。环境变量只填了一部分会直接拒绝，不回退到文件。相对路径与符号链接会规范化检查，禁止仓库内路径；不要创建 `smoke/credentials.json`，不要将密钥写入命令历史、日志或 issue。探针会连接腾讯服务，本次只运行离线安全测试。
+
+新增离线门禁：`node scripts/verify-authorization.mjs`、`node scripts/verify-security-config.mjs`。CI 还在临时目录安装精确版本的 DSH 凭据组件并运行 `scripts/verify-host-contract.mjs`；原有三套测试计数门禁保留。

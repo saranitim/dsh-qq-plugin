@@ -275,6 +275,7 @@ window.__ModuleLoader__.load({
         enabled: '启用通道',
         enabledHint: '关掉后不再接收 QQ 消息，凭据保留。',
         accounts: '已绑定账号',
+        missingOwner: '缺少所有者 OpenID：已禁用入站，请重新扫码绑定。',
         noAccounts: '还没绑定。点下面的按钮扫码。',
         polling: '已连接',
         idle: '已停止',
@@ -393,6 +394,7 @@ window.__ModuleLoader__.load({
         enabledHint: 'Off stops receiving QQ messages; credentials are kept.',
         accounts: 'Bound bot',
         noAccounts: 'Nothing bound yet. Scan with the button below.',
+        missingOwner: 'Owner OpenID missing: inbound disabled. Scan again.',
         polling: 'connected',
         idle: 'stopped',
         needsLogin: 'Credentials expired. Scan again.',
@@ -1366,7 +1368,7 @@ a.dsh-qq-button { text-decoration: none; }
                           h('span', { className: 'dsh-qq-mono' }, account.accountId),
                           account.userId
                             ? h('span', { className: 'dsh-qq-mono' }, ` ← ${account.userId}`)
-                            : null,
+                            : h('span', { role: 'alert' }, t.missingOwner),
                           account.boundAt
                             ? h('span', { className: 'dsh-qq-mono' }, ` · ${account.boundAt}`)
                             : null,

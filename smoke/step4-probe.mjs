@@ -30,9 +30,10 @@
  * - `step4-surface.mjs`：**离线**，只核对 SDK 的导出面与依赖是否装上。可以随时跑。
  * - 本脚本：**联网**，核对 QQ 服务端的真实行为。需要人。
  */
-import { appendFileSync, existsSync, readFileSync, writeFileSync } from 'node:fs'
+import { appendFileSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { loadProbeCredentials } from './credentials.mjs'
 import { MsgType, QQBot } from '@tencent-connect/qqbot-nodejs'
 
 const here = dirname(fileURLToPath(import.meta.url))
@@ -44,26 +45,8 @@ function log(line) {
   appendFileSync(LOG, `${stamped}\n`, 'utf8')
 }
 
-/** 与 step3-probe.mjs 同一套凭据查找逻辑：两个位置都找，并把"找过哪里"写进错误。 */
-function loadCredentials() {
-  const candidates = [
-    join(here, 'credentials.json'),
-    join(here, '..', '..', 'smoke', 'credentials.json'),
-  ]
-  const found = candidates.find((path) => existsSync(path))
-  if (found === undefined) {
-    throw new Error(
-      `找不到凭据文件。找过这些位置：\n${candidates.map((p) => `  ${p}`).join('\n')}\n` +
-        '请先完成扫码绑定（smoke/bind.mjs），或手工放一份 credentials.json。',
-    )
-  }
-  log(`凭据读自 ${found}`)
-  const parsed = JSON.parse(readFileSync(found, 'utf8'))
-  if (typeof parsed.appId !== 'string' || typeof parsed.appSecret !== 'string') {
-    throw new Error(`${found} 里缺 appId 或 appSecret`)
-  }
-  return parsed
-}
+
+
 
 /**
  * 把一次调用结果压成一行可读的事实。
@@ -92,7 +75,7 @@ async function attempt(label, fn) {
   }
 }
 
-const { appId, appSecret, userOpenid } = loadCredentials()
+const { appId, appSecret, userOpenid } = loadProbeCredentials()
 writeFileSync(LOG, '', 'utf8')
 log(`探针启动 appId=${appId} openid=${userOpenid ?? '(未记录)'}`)
 

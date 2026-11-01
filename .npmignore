@@ -14,7 +14,9 @@
 # only things that have no business in an installed copy — never `lib/`, `index.js`, `client.js`,
 # `cordis.patch.yml`, `docs/`, `tools/`, `README.md`, `README.zh.md` or `LICENSE`.
 #
-# It does not override the `files` field in package.json, which is the primary allowlist. It is here
+# It does not override the `files` field in package.json, which is the primary allowlist.
+# That allowlist now names source/doc/image extensions instead of entire directories: npm can
+# otherwise include a nested credentials.json/.env despite a matching root .npmignore rule. It is here
 # so that the tarball's contents are decided by a file whose intent is packaging.
 #
 # `tools/` stays in the package on purpose, alongside `lib/`: those checkers are part of what a
@@ -35,3 +37,7 @@ scripts/
 .gitattributes
 package-lock.json
 *.tgz
+credentials.json
+.env
+.env.*
+.npmrc

@@ -58,7 +58,7 @@
  * 那句话当时对本仓库也成立：注释里的 `Repository` 写的是 `dsh-qq`，而 `package.json` 的
  * `repository`、`docs/RELEASING.md` 的字段表和两版 README 的 CI 徽章都说 `dsh-qq-plugin`。
  * **照着抄的人会正好踩中那条 403，而本机没有任何检查会拦**——所以这道闸顺手把它也核对掉：
- * 注释里的三个字段必须等于 `package.json` / 本文件名，`Environment` 那一行必须仍然写着留空，
+ * 注释里的三个字段必须等于 `package.json` / 本文件名，`Environment` 那一行必须与发布作业的受保护环境一致，
  * 文件头那句 `Actions → … → Run workflow` 必须与 `name:` 相符，两版 README 的 CI 徽章必须
  * 指向同一个仓库。四种破坏各有自检用例。
  *
@@ -193,33 +193,14 @@ function workflowIdentity(root) {
     }
   }
 
-  /*
-   * `Environment` 不是"拿一个值来比"：它要求**留空**，也就是工作流不声明 `environment:`。
-   * 所以两半都要对——注释还说留空，而工作流确实没有 environment。
-   */
+  // Named environment is part of the npm publisher identity; missing/mismatched fails closed.
   const envFound = [...workflow.matchAll(/^#\s+Environment\s*:\s*(.+?)\s*$/gm)]
-  if (envFound.length !== 1) {
-    failures.push(
-      `${WORKFLOW_FILE}：注释里的「Environment」那一行期望恰好一处，实际找到 ${String(envFound.length)} 处`,
-    )
+  const declarations = [...workflow.matchAll(/^\s+environment:\s*([a-zA-Z0-9_-]+)\s*$/gm)]
+  if (envFound.length !== 1 || declarations.length !== 1 ||
+      envFound[0][1].trim() !== 'npm-release' || declarations[0][1] !== envFound[0][1].trim()) {
+    failures.push(`${WORKFLOW_FILE}: Environment 必须在注释和发布作业中唯一声明为 npm-release`)
   } else {
-    const written = envFound[0][1].trim()
-    const line = workflow.slice(0, envFound[0].index).split('\n').length
-    const declares = /^\s*environment\s*:/m.test(workflow)
-    const saysEmpty = /leave empty/i.test(written)
-    lines.push(
-      `  ${`${WORKFLOW_FILE}:${String(line)}`.padEnd(36)} ${'Environment'.padEnd(19)} ${written}` +
-        (declares ? '  ✗（工作流声明了 environment）' : saysEmpty ? '  ✓' : '  ✗（不再说留空）'),
-    )
-    if (declares) {
-      failures.push(
-        `${WORKFLOW_FILE}:${String(line)}  Environment：注释说留空，但这个工作流声明了 environment——npm 那一栏要跟着改，否则发布 403`,
-      )
-    } else if (!saysEmpty) {
-      failures.push(
-        `${WORKFLOW_FILE}:${String(line)}  Environment：注释里不再说"留空"，而工作流并没有 environment`,
-      )
-    }
+    lines.push(`  ${WORKFLOW_FILE}  Environment  npm-release  ✓`)
   }
 
   // 文件头那句「Actions → <名字> → Run workflow」是用户找这个工作流的地方，它得对上 `name:`。
@@ -448,7 +429,8 @@ function selfTest() {
       org: 'xcisxc29',
       repo: 'dsh-qq-plugin',
       file: 'publish.yml',
-      env: '(leave empty — this workflow declares none)',
+      env: 'npm-release',
+      declaredEnv: 'npm-release',
       fields: true,
       ...over,
     }
@@ -476,6 +458,7 @@ function selfTest() {
       '',
       'jobs:',
       '  publish:',
+      `    environment: ${values.declaredEnv}`,
       '    runs-on: ubuntu-latest',
       '    steps:',
       '      - uses: actions/checkout@v4',
@@ -529,6 +512,18 @@ function selfTest() {
 
   /** name 说明破坏方式，mentions 是失败信息里必须出现的字串。 */
   const cases = [
+    {
+      name: 'Environment 注释与实际环境不一致',
+      mutate: () => writeFileSync(join(root, WORKFLOW_FILE), workflow({ declaredEnv: 'wrong' }), 'utf8'),
+      expectOk: false,
+      mentions: ['Environment', 'npm-release'],
+    },
+    {
+      name: 'Environment 不能退回未保护的空环境',
+      mutate: () => writeFileSync(join(root, WORKFLOW_FILE), workflow({ env: 'leave empty', declaredEnv: '' }), 'utf8'),
+      expectOk: false,
+      mentions: ['Environment'],
+    },
     { name: '原样（3/5/2 对 3/5/2）', mutate: () => {}, expectOk: true, mentions: [] },
     {
       name: '把 README.md 的宿主侧改成 4（错一位）',
